@@ -1,0 +1,63 @@
+name: Build Arena Cards APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack project ZIP
+        run: |
+          ZIP=$(ls -1 *.zip 2>/dev/null | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "::error::В корне репозитория не найден ZIP-файл проекта. Загрузи ZIP через Add file -> Upload files."
+            exit 1
+          fi
+          echo "Используем архив: $ZIP"
+          mkdir -p project
+          unzip -q -o "$ZIP" -d project
+          SETTINGS=$(find project -name settings.gradle | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "::error::В архиве не найден settings.gradle. Это не Android-проект."
+            exit 1
+          fi
+          DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+          echo "Проект найден в: $DIR"
+          ls -la "$DIR"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArenaCards-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
